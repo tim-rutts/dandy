@@ -35,6 +35,15 @@ type Magazine struct {
 	Err  error
 }
 
+func (m *Magazine) String() string {
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("Year %v Name %q Addr %q", m.Year, m.Name, m.Addr))
+	if m.Err != nil {
+		sb.WriteString(fmt.Sprintf(" Error %v", m.Err))
+	}
+	return sb.String()
+}
+
 type Year int
 
 func (y *Year) String() string {
@@ -260,7 +269,7 @@ func (d *dandyDownloader) reportMagazineLinks(ctx context.Context, links <-chan 
 		case <-ctx.Done():
 			return
 		default:
-			d.report(fmt.Sprintf("%v magazine %v", time.Now(), link))
+			d.report(fmt.Sprintf("%v\n", link))
 			time.Sleep(200 * time.Millisecond)
 		}
 	}
@@ -268,30 +277,45 @@ func (d *dandyDownloader) reportMagazineLinks(ctx context.Context, links <-chan 
 
 func (d *dandyDownloader) reportYearPage(y Year, err error) {
 	if err != nil {
-		d.report(fmt.Sprintf("%v cannot download %v becaues of %v", time.Now(), y, err))
+		d.report(fmt.Sprintf("cannot download %v becaues of %v\n", y, err))
 		return
 	}
-	d.report(fmt.Sprintf("%v downloaded %v year page", time.Now(), y))
+	d.report(fmt.Sprintf("downloaded %v year page\n", y))
 }
 
 func (d *dandyDownloader) reportStarted() {
 	d.started = time.Now()
-	d.report(fmt.Sprintf("started working for years from %v to %v (total year(s) %v)", d.from, d.to, d.count))
+
+	var sb strings.Builder
+	sb.WriteString("started downloading for ")
+	if d.count == 1 {
+		sb.WriteString(fmt.Sprintf("%v year", d.from))
+	} else {
+		sb.WriteString(fmt.Sprintf("%v years from %v to %v", d.count, d.from, d.to))
+	}
+	sb.WriteString("\n")
+	d.report(sb.String())
 }
 
 func (d *dandyDownloader) reportFinished(fatalErr interface{}) {
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("finished working for %v \n", time.Since(d.started)))
+	sb.WriteString(fmt.Sprintf("statistic: %v \n", d.stat()))
 	if fatalErr != nil {
-		d.report(fmt.Sprintf("finished working for %v with fatal err %v stat %v", time.Since(d.started), fatalErr, d.stat()))
-		return
+		sb.WriteString(fmt.Sprintf("with fatal err %v", fatalErr))
 	}
-	d.report(fmt.Sprintf("finished working for %v stat %v", time.Since(d.started), d.stat()))
+	d.report(sb.String())
 }
 
 func (d *dandyDownloader) report(data interface{}) {
+	d.reportOpt(func() interface{} { return data })
+}
+
+func (d *dandyDownloader) reportOpt(data func() interface{}) {
 	if !d.verbose {
 		return
 	}
-	fmt.Println(data)
+	fmt.Printf("%v: %v", time.Now().Format("03:04:05.000"), data())
 }
 
 func (d *dandyDownloader) stat() string {
