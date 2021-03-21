@@ -10,6 +10,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
@@ -68,21 +69,29 @@ type Downloader interface {
 }
 
 type dandyDownloader struct {
-	from, to int
-	count    int
-	verbose  bool
-	done     chan struct{}
-	output   string
-	started  time.Time
+	from, to     int
+	count        int
+	verbose      bool
+	done         chan struct{}
+	output       string
+	started      time.Time
+	totYears     *int32
+	totYearsDone *int32
+	totMags      *int32
+	totMagsDone  *int32
 }
 
 func newDandyDownloader(from, to int, verbose bool, output string) *dandyDownloader {
 	return &dandyDownloader{
-		from:    from,
-		to:      to,
-		count:   from - to + 1,
-		verbose: verbose,
-		output:  output,
+		from:         from,
+		to:           to,
+		count:        from - to + 1,
+		verbose:      verbose,
+		output:       output,
+		totYears:     new(int32),
+		totYearsDone: new(int32),
+		totMags:      new(int32),
+		totMagsDone:  new(int32),
 	}
 }
 
@@ -137,6 +146,7 @@ func (d *dandyDownloader) downloadYearPages(ctx context.Context, years <-chan Ye
 			page := d.downloadYearPage(ctx, year)
 			select {
 			case c <- page:
+				d.incYearProcessed()
 				d.reportYearPage(year, page.err)
 				break
 			case <-ctx.Done():
@@ -174,6 +184,7 @@ func (d *dandyDownloader) parseYearPages(ctx context.Context, pages <-chan *Year
 			for _, link := range links {
 				select {
 				case c <- link:
+					d.incMag()
 					break
 				case <-ctx.Done():
 					return
@@ -233,6 +244,7 @@ func (d *dandyDownloader) genYears(ctx context.Context) <-chan Year {
 		for i := d.from; i <= d.to; i++ {
 			select {
 			case c <- Year(i):
+				d.incYear()
 				break
 			case <-ctx.Done():
 				return
@@ -249,7 +261,7 @@ func (d *dandyDownloader) reportMagazineLinks(ctx context.Context, links <-chan 
 			return
 		default:
 			d.report(fmt.Sprintf("%v magazine %v", time.Now(), link))
-			time.Sleep(1 * time.Second)
+			time.Sleep(200 * time.Millisecond)
 		}
 	}
 }
@@ -269,10 +281,10 @@ func (d *dandyDownloader) reportStarted() {
 
 func (d *dandyDownloader) reportFinished(fatalErr interface{}) {
 	if fatalErr != nil {
-		d.report(fmt.Sprintf("finished working for %v with fatal err %v", time.Since(d.started), fatalErr))
+		d.report(fmt.Sprintf("finished working for %v with fatal err %v stat %v", time.Since(d.started), fatalErr, d.stat()))
 		return
 	}
-	d.report(fmt.Sprintf("finished working for %v", time.Since(d.started)))
+	d.report(fmt.Sprintf("finished working for %v stat %v", time.Since(d.started), d.stat()))
 }
 
 func (d *dandyDownloader) report(data interface{}) {
@@ -280,6 +292,26 @@ func (d *dandyDownloader) report(data interface{}) {
 		return
 	}
 	fmt.Println(data)
+}
+
+func (d *dandyDownloader) stat() string {
+	return fmt.Sprintf("total years: %v processed: %v total magazines %v processed %v", *d.totYears, *d.totYearsDone, *d.totMags, *d.totMagsDone)
+}
+
+func (d *dandyDownloader) incYear() {
+	atomic.AddInt32(d.totYears, 1)
+}
+
+func (d *dandyDownloader) incYearProcessed() {
+	atomic.AddInt32(d.totYearsDone, 1)
+}
+
+func (d *dandyDownloader) incMag() {
+	atomic.AddInt32(d.totMags, 1)
+}
+
+func (d *dandyDownloader) incMagProcessed() {
+	atomic.AddInt32(d.totMagsDone, 1)
 }
 
 func calcYearsRange(f, t, c int) (from, to int, err error) {
