@@ -232,6 +232,12 @@ func (d *dandyDownloader) parseYearPage(page *YearPage) []*Magazine {
 		}
 		altTxt, _ := nd.Find("img").First().Attr(altAttr)
 
+		text := nd.Find("p.card-text").Text()
+		text = strings.TrimSpace(text)
+		if len(text) > 0 {
+			altTxt = text
+		}
+
 		mg := &Magazine{
 			Year: page.year,
 			Addr: link,
