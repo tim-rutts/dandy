@@ -14,6 +14,7 @@ func main() {
 	to := flag.Int("to", 0, "to year. equals to from year if it is 0 or count is 0 (optional)")
 	count := flag.Int("count", 0, "count of years. used to calc to year if to year is 0 (optional)")
 	verbose := flag.Bool("verbose", false, "reports progress. disabled by default (optional)")
+	output := flag.String("output", "download", "output folder for downloaded resources (optional)")
 	flag.Parse()
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -31,7 +32,7 @@ func main() {
 		}
 	}()
 
-	downloader, err := NewDownloader(*from, *to, *count, *verbose)
+	downloader, err := NewDownloader(*from, *to, *count, *verbose, *output)
 	if err != nil {
 		fmt.Println(err)
 		cancel()

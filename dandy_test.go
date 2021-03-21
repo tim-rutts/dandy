@@ -68,7 +68,7 @@ func TestYearLinkRange(t *testing.T) {
 	}
 
 	for _, ytc := range cases {
-		links := newDandyDownloader(ytc.from, ytc.to, false).genYears(context.Background())
+		links := newDandyDownloader(ytc.from, ytc.to, false, "").genYears(context.Background())
 		count := countLinks(links)
 		if count != ytc.ln {
 			t.Fatalf("%v actual ln %v", ytc, count)
@@ -77,7 +77,7 @@ func TestYearLinkRange(t *testing.T) {
 }
 
 func TestYearLinkFormat(t *testing.T) {
-	c := newDandyDownloader(MinYear, MinYear, false).genYears(context.Background())
+	c := newDandyDownloader(MinYear, MinYear, false, "").genYears(context.Background())
 	y := <-c
 	u := y.Addr()
 	inxLP := strings.Index(u, yearPH)
@@ -119,7 +119,7 @@ func TestParseYearPage(t *testing.T) {
 	}
 	defer func() { _ = f.Close() }()
 
-	dd := newDandyDownloader(MinYear, MinYear, false)
+	dd := newDandyDownloader(MinYear, MinYear, false, "")
 	mgs := dd.parseMagazines(context.Background(), f, Year(MinYear))
 
 	var count int

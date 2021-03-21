@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"os"
 	"strconv"
 	"strings"
 
@@ -55,27 +56,41 @@ type Downloader interface {
 }
 
 type dandyDownloader struct {
-	from, to, count int
-	verbose         bool
-	done            chan struct{}
+	from, to int
+	count    int
+	verbose  bool
+	done     chan struct{}
+	output   string
 }
 
-func newDandyDownloader(from, to int, verbose bool) *dandyDownloader {
+func newDandyDownloader(from, to int, verbose bool, output string) *dandyDownloader {
 	return &dandyDownloader{
 		from:    from,
 		to:      to,
 		count:   from - to + 1,
 		verbose: verbose,
+		output:  output,
 	}
 }
 
-func NewDownloader(from, to, count int, verbose bool) (Downloader, error) {
+func NewDownloader(from, to, count int, verbose bool, output string) (Downloader, error) {
 	f, t, err := calcYearsRange(from, to, count)
 	if err != nil {
 		return nil, err
 	}
 
-	return newDandyDownloader(f, t, verbose), nil
+	exists, err := pathExists(output)
+	if err != nil {
+		return nil, err
+	}
+	if !exists {
+		err = createDir(output)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return newDandyDownloader(f, t, verbose, output), nil
 }
 
 func (d *dandyDownloader) Run(ctx context.Context) <-chan struct{} {
@@ -210,4 +225,19 @@ func calcYearsRange(f, t, c int) (from, to int, err error) {
 		return
 	}
 	return
+}
+
+func pathExists(path string) (bool, error) {
+	_, err := os.Stat(path)
+	if err == nil {
+		return true, nil
+	}
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	return false, err
+}
+
+func createDir(path string) error {
+	return os.Mkdir(path, 0777)
 }
