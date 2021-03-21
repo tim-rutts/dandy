@@ -2,7 +2,7 @@
   <configuration default="false" name="go build dandy" type="GoApplicationRunConfiguration" factoryName="Go Application" nameIsGenerated="true">
     <module name="dandy" />
     <working_directory value="$PROJECT_DIR$/" />
-    <parameters value="-from=1944" />
+    <parameters value="-from=1944 -verbose=true" />
     <EXTENSION ID="net.ashald.envfile">
       <option name="IS_ENABLED" value="false" />
       <option name="IS_SUBST" value="false" />

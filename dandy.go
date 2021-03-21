@@ -123,7 +123,8 @@ func (d *dandyDownloader) Run(ctx context.Context) <-chan struct{} {
 func (d *dandyDownloader) run(ctx context.Context) {
 	years := d.genYears(ctx)
 	pages := d.downloadYearPages(ctx, years)
-	_ = d.parseYearPages(ctx, pages)
+	links := d.parseYearPages(ctx, pages)
+	d.reportMagazineLinks(ctx, links)
 
 	panic("not implemented")
 }
@@ -239,6 +240,18 @@ func (d *dandyDownloader) genYears(ctx context.Context) <-chan Year {
 		}
 	}()
 	return c
+}
+
+func (d *dandyDownloader) reportMagazineLinks(ctx context.Context, links <-chan *Magazine) {
+	for link := range links {
+		select {
+		case <-ctx.Done():
+			return
+		default:
+			d.report(fmt.Sprintf("%v magazine %v", time.Now(), link))
+			time.Sleep(1 * time.Second)
+		}
+	}
 }
 
 func (d *dandyDownloader) reportYearPage(y Year, err error) {
