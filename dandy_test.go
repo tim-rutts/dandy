@@ -119,11 +119,12 @@ func TestParseYearPage(t *testing.T) {
 	}
 	defer func() { _ = f.Close() }()
 
+	yp := &YearPage{year: Year(MinYear), content: f}
 	dd := newDandyDownloader(MinYear, MinYear, false, "")
-	mgs := dd.parseMagazines(context.Background(), f, Year(MinYear))
+	mgs := dd.parseYearPage(yp)
 
 	var count int
-	for mg := range mgs {
+	for _, mg := range mgs {
 		if mg.Err != nil {
 			t.Fatalf("err %v mg %q", mg.Err, mg)
 		}

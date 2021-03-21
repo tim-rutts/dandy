@@ -122,7 +122,8 @@ func (d *dandyDownloader) Run(ctx context.Context) <-chan struct{} {
 
 func (d *dandyDownloader) run(ctx context.Context) {
 	years := d.genYears(ctx)
-	_ = d.downloadYearPages(ctx, years)
+	pages := d.downloadYearPages(ctx, years)
+	_ = d.parseYearPages(ctx, pages)
 
 	panic("not implemented")
 }
@@ -135,6 +136,7 @@ func (d *dandyDownloader) downloadYearPages(ctx context.Context, years <-chan Ye
 			page := d.downloadYearPage(ctx, year)
 			select {
 			case c <- page:
+				d.reportYearPage(year, page.err)
 				break
 			case <-ctx.Done():
 				return
@@ -162,55 +164,65 @@ func (d *dandyDownloader) downloadYearPage(ctx context.Context, year Year) *Year
 	return &YearPage{year: year, content: resp.Body}
 }
 
-func (d *dandyDownloader) parseMagazines(ctx context.Context, r io.Reader, y Year) <-chan *Magazine {
-	errMag := func(err error) *Magazine { return &Magazine{Year: y, Err: err} }
+func (d *dandyDownloader) parseYearPages(ctx context.Context, pages <-chan *YearPage) <-chan *Magazine {
 	c := make(chan *Magazine)
 	go func() {
 		defer close(c)
-		push := func(m *Magazine) {
-			select {
-			case c <- m:
-				return
-			case <-ctx.Done():
-				return
+		for page := range pages {
+			links := d.parseYearPage(page)
+			for _, link := range links {
+				select {
+				case c <- link:
+					break
+				case <-ctx.Done():
+					return
+				}
 			}
-		}
-		doc, err := goquery.NewDocumentFromReader(r)
-		if err != nil {
-			push(errMag(err))
-			return
-		}
-
-		set := doc.Find("div.card a")
-		if set == nil || len(set.Nodes) == 0 {
-			push(errMag(errors.New("no links found")))
-			return
-		}
-
-		for _, node := range set.Nodes {
-			if node == nil {
-				continue
-			}
-
-			nd := goquery.NewDocumentFromNode(node)
-			link, ok := nd.Attr(hrefAttr)
-			if !ok {
-				continue
-			}
-			if _, err = url.ParseRequestURI(link); err != nil {
-				continue
-			}
-			altTxt, _ := nd.Find("img").First().Attr(altAttr)
-
-			magazine := &Magazine{
-				Year: y,
-				Addr: link,
-				Name: altTxt,
-			}
-			push(magazine)
 		}
 	}()
 	return c
+}
+
+func (d *dandyDownloader) parseYearPage(page *YearPage) []*Magazine {
+	errMag := func(y Year, err error) []*Magazine { return []*Magazine{{Year: y, Err: err}} }
+	if page.err != nil {
+		return errMag(page.year, page.err)
+	}
+	defer page.Close()
+
+	doc, err := goquery.NewDocumentFromReader(page.content)
+	if err != nil {
+		return errMag(page.year, err)
+	}
+	set := doc.Find("div.card a")
+	mgs := make([]*Magazine, 0, len(set.Nodes))
+	for _, node := range set.Nodes {
+		if node == nil {
+			continue
+		}
+
+		nd := goquery.NewDocumentFromNode(node)
+		link, ok := nd.Attr(hrefAttr)
+		if !ok {
+			continue
+		}
+		if _, err = url.ParseRequestURI(link); err != nil {
+			continue
+		}
+		altTxt, _ := nd.Find("img").First().Attr(altAttr)
+
+		mg := &Magazine{
+			Year: page.year,
+			Addr: link,
+			Name: altTxt,
+		}
+		mgs = append(mgs, mg)
+	}
+
+	if len(mgs) == 0 {
+		return errMag(page.year, errors.New("no links found"))
+	}
+	return mgs
 }
 
 func (d *dandyDownloader) genYears(ctx context.Context) <-chan Year {
@@ -227,6 +239,14 @@ func (d *dandyDownloader) genYears(ctx context.Context) <-chan Year {
 		}
 	}()
 	return c
+}
+
+func (d *dandyDownloader) reportYearPage(y Year, err error) {
+	if err != nil {
+		d.report(fmt.Sprintf("%v cannot download %v becaues of %v", time.Now(), y, err))
+		return
+	}
+	d.report(fmt.Sprintf("%v downloaded %v year page", time.Now(), y))
 }
 
 func (d *dandyDownloader) reportStarted() {
