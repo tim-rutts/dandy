@@ -42,12 +42,25 @@ type Magazine struct {
 
 func (m *Magazine) String() string {
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Year %v Name %q Size %v Filepath %v\n", m.Year, m.Name, m.Size, m.Filepath))
+	sb.WriteString(fmt.Sprintf("Year %v Name %q Size %v Filepath %v\n", m.Year, m.Name, m.FormattedSize(), m.Filepath))
 	sb.WriteString(fmt.Sprintf("Addr %q", m.Addr))
 	if m.Err != nil {
 		sb.WriteString(fmt.Sprintf("\nError %v", m.Err))
 	}
 	return sb.String()
+}
+
+func (m *Magazine) FormattedSize() string {
+	const unit = 1000
+	if m.Size < unit {
+		return fmt.Sprintf("%d b", m.Size)
+	}
+	div, exp := int64(unit), 0
+	for n := m.Size / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %cb", float64(m.Size)/float64(div), "kMGTPE"[exp])
 }
 
 func (m *Magazine) Filename() (string, error) {
@@ -386,7 +399,8 @@ func (d *dandyDownloader) buildAndCheckMagazineFilepath(m *Magazine) (string, er
 func (d *dandyDownloader) reportMagazine(m *Magazine, dur time.Duration) {
 	d.report(func() interface{} {
 		var sb strings.Builder
-		sb.WriteString(fmt.Sprintf("processed for %v %v\n", dur, m))
+		sb.WriteString(fmt.Sprintf("magazine %v\n", m))
+		sb.WriteString(fmt.Sprintf("elapsed %v total %v\n", formatDur(dur), formatDur(time.Since(d.started))))
 		sb.WriteString(fmt.Sprintf("progress %v\n\n", d.stat()))
 		return sb.String()
 	})
@@ -410,7 +424,7 @@ func (d *dandyDownloader) reportStarted() {
 func (d *dandyDownloader) reportFinished(fatalErr interface{}) {
 	d.report(func() interface{} {
 		var sb strings.Builder
-		sb.WriteString(fmt.Sprintf("finished working for %v \n", time.Since(d.started)))
+		sb.WriteString(fmt.Sprintf("finished working for %v \n", formatDur(time.Since(d.started))))
 		sb.WriteString(fmt.Sprintf("statistic: %v \n", d.stat()))
 		if fatalErr != nil {
 			sb.WriteString(fmt.Sprintf("with fatal err %v", fatalErr))
@@ -423,7 +437,7 @@ func (d *dandyDownloader) report(data func() interface{}) {
 	if !d.verbose {
 		return
 	}
-	fmt.Printf("%v: %v", time.Now().Format("03:04:05.000"), data())
+	fmt.Printf("%v: %v", formatTime(time.Now()), data())
 }
 
 func (d *dandyDownloader) stat() string {
@@ -498,4 +512,17 @@ func createDir(path string) error {
 
 func deleteFile(path string) error {
 	return os.Remove(path)
+}
+
+func formatTime(t time.Time) string {
+	return t.Format("03:04:05.000")
+}
+
+func formatDur(dur time.Duration) string {
+	rd := time.Millisecond
+	s := dur.Seconds()
+	if s > time.Minute.Seconds() {
+		rd = time.Second
+	}
+	return fmt.Sprintf("%v", dur.Round(rd))
 }
