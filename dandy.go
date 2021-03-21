@@ -34,15 +34,6 @@ type Magazine struct {
 	Err  error
 }
 
-func newErrMagazine(y Year, err error) *Magazine {
-	return &Magazine{
-		Year: y,
-		Addr: "Unknown",
-		Name: "Unknown",
-		Err:  err,
-	}
-}
-
 type Year int
 
 func (y *Year) String() string {
@@ -172,6 +163,7 @@ func (d *dandyDownloader) downloadYearPage(ctx context.Context, year Year) *Year
 }
 
 func (d *dandyDownloader) parseMagazines(ctx context.Context, r io.Reader, y Year) <-chan *Magazine {
+	errMag := func(err error) *Magazine { return &Magazine{Year: y, Err: err} }
 	c := make(chan *Magazine)
 	go func() {
 		defer close(c)
@@ -185,13 +177,13 @@ func (d *dandyDownloader) parseMagazines(ctx context.Context, r io.Reader, y Yea
 		}
 		doc, err := goquery.NewDocumentFromReader(r)
 		if err != nil {
-			push(newErrMagazine(y, err))
+			push(errMag(err))
 			return
 		}
 
 		set := doc.Find("div.card a")
 		if set == nil || len(set.Nodes) == 0 {
-			push(newErrMagazine(y, errors.New("no links found")))
+			push(errMag(errors.New("no links found")))
 			return
 		}
 
