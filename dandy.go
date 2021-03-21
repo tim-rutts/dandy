@@ -9,6 +9,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/PuerkitoBio/goquery"
 )
@@ -61,6 +62,7 @@ type dandyDownloader struct {
 	verbose  bool
 	done     chan struct{}
 	output   string
+	started  time.Time
 }
 
 func newDandyDownloader(from, to int, verbose bool, output string) *dandyDownloader {
@@ -178,15 +180,16 @@ func (d *dandyDownloader) genYears(ctx context.Context) <-chan Year {
 }
 
 func (d *dandyDownloader) reportStarted() {
+	d.started = time.Now()
 	d.report(fmt.Sprintf("started working for years from %v to %v (total year(s) %v)", d.from, d.to, d.count))
 }
 
 func (d *dandyDownloader) reportFinished(fatalErr interface{}) {
 	if fatalErr != nil {
-		d.report(fmt.Sprintf("finished working with fatal err %v", fatalErr))
+		d.report(fmt.Sprintf("finished working for %v with fatal err %v", time.Since(d.started), fatalErr))
 		return
 	}
-	d.report(fmt.Sprintf("finished working"))
+	d.report(fmt.Sprintf("finished working for %v", time.Since(d.started)))
 }
 
 func (d *dandyDownloader) report(data interface{}) {
