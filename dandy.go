@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"net/url"
 	"os"
 	"strconv"
@@ -50,6 +51,25 @@ func (y *Year) String() string {
 
 func (y *Year) Addr() string {
 	return strings.ReplaceAll(yearUrl, yearPH, y.String())
+}
+
+type YearPage struct {
+	year    Year
+	content io.ReadCloser
+	closed  bool
+	err     error
+}
+
+func (y *YearPage) Close() {
+	if y.closed {
+		return
+	}
+	if y.content == nil {
+		y.closed = true
+		return
+	}
+	_ = y.content.Close()
+	y.closed = true
 }
 
 type Downloader interface {
@@ -110,7 +130,45 @@ func (d *dandyDownloader) Run(ctx context.Context) <-chan struct{} {
 }
 
 func (d *dandyDownloader) run(ctx context.Context) {
+	years := d.genYears(ctx)
+	_ = d.downloadYearPages(ctx, years)
+
 	panic("not implemented")
+}
+
+func (d *dandyDownloader) downloadYearPages(ctx context.Context, years <-chan Year) <-chan *YearPage {
+	c := make(chan *YearPage)
+	go func() {
+		defer close(c)
+		for year := range years {
+			page := d.downloadYearPage(ctx, year)
+			select {
+			case c <- page:
+				break
+			case <-ctx.Done():
+				return
+			}
+		}
+	}()
+	return c
+}
+
+func (d *dandyDownloader) downloadYearPage(ctx context.Context, year Year) *YearPage {
+	errYear := func(err error) *YearPage { return &YearPage{year: year, err: err} }
+	rq, err := http.NewRequestWithContext(ctx, http.MethodGet, year.Addr(), nil)
+	if err != nil {
+		return errYear(err)
+	}
+
+	resp, err := http.DefaultClient.Do(rq)
+	if err != nil {
+		return errYear(err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return errYear(fmt.Errorf("status code %v", resp.StatusCode))
+	}
+	return &YearPage{year: year, content: resp.Body}
 }
 
 func (d *dandyDownloader) parseMagazines(ctx context.Context, r io.Reader, y Year) <-chan *Magazine {
