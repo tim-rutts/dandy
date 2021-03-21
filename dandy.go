@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -21,6 +23,7 @@ const (
 	MaxYear  = 2008
 	hrefAttr = "href"
 	altAttr  = "alt"
+	ext      = "pdf"
 )
 
 var (
@@ -29,19 +32,45 @@ var (
 )
 
 type Magazine struct {
-	Year Year
-	Addr string
-	Name string
-	Err  error
+	Year     Year
+	Addr     string
+	Name     string
+	Err      error
+	Size     int64
+	Filepath string
 }
 
 func (m *Magazine) String() string {
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Year %v Name %q Addr %q", m.Year, m.Name, m.Addr))
+	sb.WriteString(fmt.Sprintf("Year %v Name %q Size %v Filepath %v\n", m.Year, m.Name, m.Size, m.Filepath))
+	sb.WriteString(fmt.Sprintf("Addr %q", m.Addr))
 	if m.Err != nil {
-		sb.WriteString(fmt.Sprintf(" Error %v", m.Err))
+		sb.WriteString(fmt.Sprintf("\nError %v", m.Err))
 	}
 	return sb.String()
+}
+
+func (m *Magazine) Filename() (string, error) {
+	if len(m.Name) > 0 {
+		return m.filename(m.Name), nil
+	}
+
+	if len(m.Addr) == 0 {
+		return "", errors.New("addr is empty")
+	}
+
+	_, fn := path.Split(m.Addr)
+	if len(fn) == 0 {
+		return "", errors.New("cannot extract filename from addr")
+	}
+	return m.filename(fn), nil
+}
+
+func (m *Magazine) filename(fn string) string {
+	if fe := path.Ext(fn); len(fe) == 0 {
+		return fmt.Sprintf("%v.%v", fn, ext)
+	}
+	return fn
 }
 
 type Year int
@@ -88,6 +117,7 @@ type dandyDownloader struct {
 	totYearsDone *int32
 	totMags      *int32
 	totMagsDone  *int32
+	totErrs      *int32
 }
 
 func newDandyDownloader(from, to int, verbose bool, output string) *dandyDownloader {
@@ -101,6 +131,7 @@ func newDandyDownloader(from, to int, verbose bool, output string) *dandyDownloa
 		totYearsDone: new(int32),
 		totMags:      new(int32),
 		totMagsDone:  new(int32),
+		totErrs:      new(int32),
 	}
 }
 
@@ -142,9 +173,7 @@ func (d *dandyDownloader) run(ctx context.Context) {
 	years := d.genYears(ctx)
 	pages := d.downloadYearPages(ctx, years)
 	links := d.parseYearPages(ctx, pages)
-	d.reportMagazineLinks(ctx, links)
-
-	panic("not implemented")
+	d.downloadMagazines(ctx, links)
 }
 
 func (d *dandyDownloader) downloadYearPages(ctx context.Context, years <-chan Year) <-chan *YearPage {
@@ -156,7 +185,6 @@ func (d *dandyDownloader) downloadYearPages(ctx context.Context, years <-chan Ye
 			select {
 			case c <- page:
 				d.incYearProcessed()
-				d.reportYearPage(year, page.err)
 				break
 			case <-ctx.Done():
 				return
@@ -269,24 +297,99 @@ func (d *dandyDownloader) genYears(ctx context.Context) <-chan Year {
 	return c
 }
 
-func (d *dandyDownloader) reportMagazineLinks(ctx context.Context, links <-chan *Magazine) {
-	for link := range links {
+func (d *dandyDownloader) downloadMagazines(ctx context.Context, magazines <-chan *Magazine) {
+	for magazine := range magazines {
 		select {
 		case <-ctx.Done():
 			return
 		default:
-			d.report(fmt.Sprintf("%v\n", link))
-			time.Sleep(200 * time.Millisecond)
+			started := time.Now()
+			err := d.downloadMagazine(ctx, magazine)
+			if err != nil {
+				magazine.Err = err
+				d.incErrors()
+			} else {
+				d.incMagProcessed()
+			}
+			d.reportMagazine(magazine, time.Since(started))
 		}
 	}
 }
 
-func (d *dandyDownloader) reportYearPage(y Year, err error) {
-	if err != nil {
-		d.report(fmt.Sprintf("cannot download %v becaues of %v\n", y, err))
-		return
+func (d *dandyDownloader) downloadMagazine(ctx context.Context, m *Magazine) error {
+	if m.Err != nil {
+		return m.Err
 	}
-	d.report(fmt.Sprintf("downloaded %v year page\n", y))
+
+	fp, err := d.buildAndCheckMagazineFilepath(m)
+	if err != nil {
+		return err
+	}
+
+	rq, err := http.NewRequestWithContext(ctx, http.MethodGet, m.Addr, nil)
+	if err != nil {
+		return err
+	}
+	resp, err := http.DefaultClient.Do(rq)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = resp.Body.Close() }()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("status code %v", resp.StatusCode)
+	}
+
+	out, err := os.Create(fp)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = out.Close() }()
+
+	size, err := io.Copy(out, resp.Body)
+	if err != nil {
+		if ok, _ := pathExists(fp); ok {
+			_ = deleteFile(fp)
+		}
+		return err
+	}
+	m.Filepath = fp
+	m.Size = size
+	return nil
+}
+
+func (d *dandyDownloader) buildAndCheckMagazineFilepath(m *Magazine) (string, error) {
+	fn, err := m.Filename()
+	if err != nil {
+		return "", err
+	}
+
+	fp := filepath.Join(d.output, m.Year.String(), fn)
+	dir, _ := path.Split(fp)
+	if ok, err := pathExists(dir); err != nil {
+		return "", err
+	} else if !ok {
+		err = createDir(dir)
+		if err != nil {
+			return "", err
+		}
+		return fn, nil
+	}
+
+	if ok, err := pathExists(fp); err != nil {
+		return "", err
+	} else if ok {
+		return "", fmt.Errorf("file %v already exists", fp)
+	}
+	return fp, nil
+}
+
+func (d *dandyDownloader) reportMagazine(m *Magazine, dur time.Duration) {
+	d.reportOpt(func() interface{} {
+		var sb strings.Builder
+		sb.WriteString(fmt.Sprintf("processed for %v %v\n", dur, m))
+		sb.WriteString(fmt.Sprintf("progress %v\n\n", d.stat()))
+		return sb.String()
+	})
 }
 
 func (d *dandyDownloader) reportStarted() {
@@ -325,7 +428,7 @@ func (d *dandyDownloader) reportOpt(data func() interface{}) {
 }
 
 func (d *dandyDownloader) stat() string {
-	return fmt.Sprintf("total years: %v processed: %v total magazines %v processed %v", *d.totYears, *d.totYearsDone, *d.totMags, *d.totMagsDone)
+	return fmt.Sprintf("total years: %v processed: %v total magazines %v processed %v errors %v", *d.totYears, *d.totYearsDone, *d.totMags, *d.totMagsDone, *d.totErrs)
 }
 
 func (d *dandyDownloader) incYear() {
@@ -342,6 +445,10 @@ func (d *dandyDownloader) incMag() {
 
 func (d *dandyDownloader) incMagProcessed() {
 	atomic.AddInt32(d.totMagsDone, 1)
+}
+
+func (d *dandyDownloader) incErrors() {
+	atomic.AddInt32(d.totErrs, 1)
 }
 
 func calcYearsRange(f, t, c int) (from, to int, err error) {
@@ -388,4 +495,8 @@ func pathExists(path string) (bool, error) {
 
 func createDir(path string) error {
 	return os.Mkdir(path, 0777)
+}
+
+func deleteFile(path string) error {
+	return os.Remove(path)
 }
