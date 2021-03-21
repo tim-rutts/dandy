@@ -385,7 +385,7 @@ func (d *dandyDownloader) buildAndCheckMagazineFilepath(m *Magazine) (string, er
 		if err != nil {
 			return "", err
 		}
-		return fn, nil
+		return fp, nil
 	}
 
 	if ok, err := pathExists(fp); err != nil {
