@@ -384,7 +384,7 @@ func (d *dandyDownloader) buildAndCheckMagazineFilepath(m *Magazine) (string, er
 }
 
 func (d *dandyDownloader) reportMagazine(m *Magazine, dur time.Duration) {
-	d.reportOpt(func() interface{} {
+	d.report(func() interface{} {
 		var sb strings.Builder
 		sb.WriteString(fmt.Sprintf("processed for %v %v\n", dur, m))
 		sb.WriteString(fmt.Sprintf("progress %v\n\n", d.stat()))
@@ -394,33 +394,32 @@ func (d *dandyDownloader) reportMagazine(m *Magazine, dur time.Duration) {
 
 func (d *dandyDownloader) reportStarted() {
 	d.started = time.Now()
-
-	var sb strings.Builder
-	sb.WriteString("started downloading for ")
-	if d.count == 1 {
-		sb.WriteString(fmt.Sprintf("%v year", d.from))
-	} else {
-		sb.WriteString(fmt.Sprintf("%v years from %v to %v", d.count, d.from, d.to))
-	}
-	sb.WriteString("\n")
-	d.report(sb.String())
+	d.report(func() interface{} {
+		var sb strings.Builder
+		sb.WriteString("started downloading for ")
+		if d.count == 1 {
+			sb.WriteString(fmt.Sprintf("%v year", d.from))
+		} else {
+			sb.WriteString(fmt.Sprintf("%v years from %v to %v", d.count, d.from, d.to))
+		}
+		sb.WriteString("\n")
+		return sb.String()
+	})
 }
 
 func (d *dandyDownloader) reportFinished(fatalErr interface{}) {
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("finished working for %v \n", time.Since(d.started)))
-	sb.WriteString(fmt.Sprintf("statistic: %v \n", d.stat()))
-	if fatalErr != nil {
-		sb.WriteString(fmt.Sprintf("with fatal err %v", fatalErr))
-	}
-	d.report(sb.String())
+	d.report(func() interface{} {
+		var sb strings.Builder
+		sb.WriteString(fmt.Sprintf("finished working for %v \n", time.Since(d.started)))
+		sb.WriteString(fmt.Sprintf("statistic: %v \n", d.stat()))
+		if fatalErr != nil {
+			sb.WriteString(fmt.Sprintf("with fatal err %v", fatalErr))
+		}
+		return sb.String()
+	})
 }
 
-func (d *dandyDownloader) report(data interface{}) {
-	d.reportOpt(func() interface{} { return data })
-}
-
-func (d *dandyDownloader) reportOpt(data func() interface{}) {
+func (d *dandyDownloader) report(data func() interface{}) {
 	if !d.verbose {
 		return
 	}
