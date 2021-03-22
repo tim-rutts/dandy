@@ -143,7 +143,6 @@ type Downloader interface {
 
 type dandyDownloader struct {
 	from, to     int
-	verbose      bool
 	done         chan struct{}
 	output       string
 	startMx      sync.Mutex
@@ -160,11 +159,10 @@ type dandyDownloader struct {
 	stopMx       sync.Mutex
 }
 
-func newDandyDownloader(from, to int, verbose bool, output string) *dandyDownloader {
+func newDandyDownloader(from, to int, output string) *dandyDownloader {
 	return &dandyDownloader{
 		from:         from,
 		to:           to,
-		verbose:      verbose,
 		output:       output,
 		totYears:     to - from + 1,
 		totYearsDone: new(int32),
@@ -174,7 +172,7 @@ func newDandyDownloader(from, to int, verbose bool, output string) *dandyDownloa
 	}
 }
 
-func NewDownloader(from, to, count int, verbose bool, output string) (Downloader, error) {
+func NewDownloader(from, to, count int, output string) (Downloader, error) {
 	f, t, err := calcYearsRange(from, to, count)
 	if err != nil {
 		return nil, err
@@ -191,7 +189,7 @@ func NewDownloader(from, to, count int, verbose bool, output string) (Downloader
 		}
 	}
 
-	return newDandyDownloader(f, t, verbose, output), nil
+	return newDandyDownloader(f, t, output), nil
 }
 
 func (d *dandyDownloader) YearFrom() int {
@@ -481,19 +479,10 @@ func (d *dandyDownloader) buildAndCheckMagazineFilepath(m *Magazine) (string, er
 }
 
 func (d *dandyDownloader) reportMagazine(m *Magazine, dur time.Duration) {
-	d.report(func() interface{} {
-		var sb strings.Builder
-		sb.WriteString(fmt.Sprintf("magazine %v\n", m))
-		sb.WriteString(fmt.Sprintf("elapsed %v total %v\n", formatDur(dur), d.elapsedStr()))
-		return sb.String()
-	})
-}
-
-func (d *dandyDownloader) report(data func() interface{}) {
-	if !d.verbose {
-		return
-	}
-	fmt.Printf("%v: %v", formatTime(time.Now()), data())
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("magazine %v\n", m))
+	sb.WriteString(fmt.Sprintf("elapsed %v total %v\n", formatDur(dur), d.elapsedStr()))
+	fmt.Println(sb.String())
 }
 
 func (d *dandyDownloader) elapsed() time.Duration {
@@ -568,10 +557,6 @@ func createDir(path string) error {
 
 func deleteFile(path string) error {
 	return os.Remove(path)
-}
-
-func formatTime(t time.Time) string {
-	return t.Format("03:04:05.000")
 }
 
 func formatDur(dur time.Duration) string {
