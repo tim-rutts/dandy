@@ -97,12 +97,39 @@ func (e *FatalError) ErrorStack() string {
 	return string(e.stack)
 }
 
+type fileExistError struct {
+	err error
+}
+
+func (e *fileExistError) Error() string {
+	return e.err.Error()
+}
+
+type MagazineExistsError struct {
+	err error
+	mag *Magazine
+}
+
+func (e *MagazineExistsError) Error() string {
+	return fmt.Sprintf("magazine %q for %v year %v", e.mag.Name, e.mag.Year, e.err)
+}
+
+type MagazineError struct {
+	err error
+	mag *Magazine
+}
+
+func (e *MagazineError) Error() string {
+	return fmt.Sprintf("magazine %q for %v year %v", e.mag.Name, e.mag.Year, e.err)
+}
+
 type Downloader interface {
 	Run(ctx context.Context) <-chan struct{}
 	Err() error
 	Status() string
 	YearFrom() int
 	YearTo() int
+	MagazineErrs() <-chan error
 }
 
 type dandyDownloader struct {
@@ -122,6 +149,9 @@ type dandyDownloader struct {
 	ctxCancel    context.CancelFunc
 	stopped      bool
 	stopMx       sync.Mutex
+	magErrsChan  chan error
+	magErrsSub   bool
+	magErrsMx    sync.Mutex
 }
 
 func newDandyDownloader(from, to int, output string) *dandyDownloader {
@@ -181,6 +211,20 @@ func (d *dandyDownloader) Err() error {
 	return d.fatalErr
 }
 
+func (d *dandyDownloader) MagazineErrs() <-chan error {
+	if d.magErrsSub {
+		return d.magErrsChan
+	}
+	d.magErrsMx.Lock()
+	defer d.magErrsMx.Unlock()
+	if d.magErrsSub {
+		return d.magErrsChan
+	}
+	d.magErrsSub = true
+	d.magErrsChan = make(chan error, 10)
+	return d.magErrsChan
+}
+
 func (d *dandyDownloader) Run(ctx context.Context) <-chan struct{} {
 	if d.started {
 		return d.done
@@ -213,6 +257,9 @@ func (d *dandyDownloader) stop(err error) {
 
 	d.stopped = true
 	d.ctxCancel()
+	if d.magErrsSub {
+		close(d.magErrsChan)
+	}
 	close(d.done)
 }
 
@@ -368,16 +415,14 @@ func (d *dandyDownloader) downloadMagazines(ctx context.Context, magazines <-cha
 		case <-ctx.Done():
 			return
 		default:
-			started := time.Now()
 			err := d.downloadMagazine(ctx, magazine)
 			if err != nil {
-				magazine.Err = err
 				d.incMagError()
+				d.reportError(ctx, magazine, err)
 			} else {
 				d.incMagOk()
+				d.incSize(magazine.Size)
 			}
-			d.incSize(magazine.Size)
-			d.reportMagazine(magazine, time.Since(started))
 		}
 	}
 }
@@ -423,11 +468,17 @@ func (d *dandyDownloader) downloadMagazine(ctx context.Context, m *Magazine) err
 	return nil
 }
 
-func (d *dandyDownloader) reportMagazine(m *Magazine, dur time.Duration) {
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("magazine %v\n", m))
-	sb.WriteString(fmt.Sprintf("elapsed %v total %v\n", formatDur(dur), d.elapsedStr()))
-	fmt.Println(sb.String())
+func (d *dandyDownloader) reportError(ctx context.Context, m *Magazine, err error) {
+	if !d.magErrsSub {
+		return
+	}
+
+	te := typedMagErr(m, err)
+	select {
+	case d.magErrsChan <- te:
+	case <-ctx.Done():
+		return
+	}
 }
 
 func (d *dandyDownloader) elapsed() time.Duration {
@@ -459,6 +510,13 @@ func (d *dandyDownloader) incMagOk() {
 
 func (d *dandyDownloader) incMagError() {
 	atomic.AddInt32(d.totMagsErrs, 1)
+}
+
+func typedMagErr(m *Magazine, err error) error {
+	if _, ok := err.(*fileExistError); ok {
+		return &MagazineExistsError{err: err, mag: m}
+	}
+	return &MagazineError{err: err, mag: m}
 }
 
 func calcYearsRange(f, t, c int) (from, to int, err error) {
@@ -543,7 +601,7 @@ func buildAndCheckMagFilepath(output string, m *Magazine) (string, error) {
 	if ok, err := pathExists(fp); err != nil {
 		return "", err
 	} else if ok {
-		return "", fmt.Errorf("file %q already exists", fp)
+		return "", &fileExistError{err: fmt.Errorf("file %q already exists", fp)}
 	}
 	return fp, nil
 }

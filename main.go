@@ -43,6 +43,7 @@ func main() {
 		return
 	}
 
+	magErrs := downloader.MagazineErrs()
 	done := downloader.Run(ctx)
 	printStart(downloader)
 
@@ -57,6 +58,8 @@ loop:
 			break loop
 		case <-ctx.Done():
 			break loop
+		case magErr := <-magErrs:
+			printMagErr(magErr)
 		}
 	}
 
@@ -71,6 +74,13 @@ loop:
 		printErrStack(err)
 	}
 	defer os.Exit(exitCode)
+}
+
+func printMagErr(err error) {
+	if _, ok := err.(*MagazineExistsError); ok && !verbose {
+		return
+	}
+	fmt.Printf("%v error %v\n", formatNow(), err)
 }
 
 func printErrStack(err error) {
