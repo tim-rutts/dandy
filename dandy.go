@@ -233,15 +233,17 @@ func (d *dandyDownloader) start(ctx context.Context) {
 	d.downloadMagazines(ctxWC, links)
 }
 
+func (d *dandyDownloader) guard() {
+	if fe := recover(); fe != nil {
+		d.stop(fe)
+	}
+}
+
 func (d *dandyDownloader) downloadYearPages(ctx context.Context, years <-chan Year) <-chan *YearPage {
 	c := make(chan *YearPage)
 	go func() {
-		defer func() {
-			close(c)
-			if fe := recover(); fe != nil {
-				d.stop(fe)
-			}
-		}()
+		defer close(c)
+		defer d.guard()
 		for year := range years {
 			page := d.downloadYearPage(ctx, year)
 			select {
@@ -277,12 +279,8 @@ func (d *dandyDownloader) downloadYearPage(ctx context.Context, year Year) *Year
 func (d *dandyDownloader) parseYearPages(ctx context.Context, pages <-chan *YearPage) <-chan *Magazine {
 	c := make(chan *Magazine)
 	go func() {
-		defer func() {
-			close(c)
-			if fe := recover(); fe != nil {
-				d.stop(fe)
-			}
-		}()
+		defer close(c)
+		defer d.guard()
 		for page := range pages {
 			links := d.parseYearPage(page)
 			for _, link := range links {
@@ -350,12 +348,8 @@ func (d *dandyDownloader) parseYearPage(page *YearPage) []*Magazine {
 func (d *dandyDownloader) genYears(ctx context.Context) <-chan Year {
 	c := make(chan Year)
 	go func() {
-		defer func() {
-			close(c)
-			if fe := recover(); fe != nil {
-				d.stop(fe)
-			}
-		}()
+		defer close(c)
+		defer d.guard()
 		for i := d.from; i <= d.to; i++ {
 			select {
 			case c <- Year(i):
@@ -514,6 +508,10 @@ func (d *dandyDownloader) incYearProcessed() {
 
 func (d *dandyDownloader) incMagTotal() {
 	atomic.AddInt32(d.totMags, 1)
+
+	if *d.totMags > 1 {
+		panic("stop stop stop")
+	}
 }
 
 func (d *dandyDownloader) incMagOk() {
