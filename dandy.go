@@ -10,6 +10,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
@@ -116,6 +117,22 @@ func (y *YearPage) Close() {
 	y.closed = true
 }
 
+type FatalError struct {
+	stack []byte
+	err   error
+}
+
+func (e *FatalError) Error() string {
+	return e.err.Error()
+}
+
+func (e *FatalError) ErrorStack() string {
+	if len(e.stack) == 0 {
+		return "no error stack"
+	}
+	return string(e.stack)
+}
+
 type Downloader interface {
 	Run(ctx context.Context) <-chan struct{}
 	Err() error
@@ -194,9 +211,9 @@ func (d *dandyDownloader) Run(ctx context.Context) <-chan struct{} {
 	return d.done
 }
 
-func (d *dandyDownloader) stop(err interface{}) {
+func (d *dandyDownloader) stop(err error) {
 	if d.fatalErr == nil && err != nil {
-		d.fatalErr = fmt.Errorf("%v", err)
+		d.fatalErr = err
 	}
 
 	if d.stopped {
@@ -216,10 +233,7 @@ func (d *dandyDownloader) stop(err interface{}) {
 
 func (d *dandyDownloader) start(ctx context.Context) {
 	ctxWC, cancel := context.WithCancel(ctx)
-	defer func() {
-		fe := recover()
-		d.stop(fe)
-	}()
+	defer d.guard()
 
 	d.startedAt = time.Now()
 	d.started = true
@@ -231,11 +245,15 @@ func (d *dandyDownloader) start(ctx context.Context) {
 	pages := d.downloadYearPages(ctxWC, years)
 	links := d.parseYearPages(ctxWC, pages)
 	d.downloadMagazines(ctxWC, links)
+	d.stop(nil)
 }
 
 func (d *dandyDownloader) guard() {
 	if fe := recover(); fe != nil {
-		d.stop(fe)
+		err := &FatalError{}
+		err.err = fmt.Errorf("%v", fe)
+		err.stack = debug.Stack()
+		d.stop(err)
 	}
 }
 
@@ -509,6 +527,7 @@ func (d *dandyDownloader) incYearProcessed() {
 func (d *dandyDownloader) incMagTotal() {
 	atomic.AddInt32(d.totMags, 1)
 
+	// TODO remove
 	if *d.totMags > 1 {
 		panic("stop stop stop")
 	}

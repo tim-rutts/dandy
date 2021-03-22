@@ -49,11 +49,17 @@ func main() {
 		break
 	}
 
+	fmt.Printf("\n--------------------------\n")
 	exitCode := 0
 	err = downloader.Err()
 	if err != nil {
 		exitCode = 1
 		fmt.Printf("\nprocessing stopped on error %v\n", err)
+		if *verbose {
+			if fe, ok := err.(*FatalError); ok {
+				fmt.Println(fe.ErrorStack())
+			}
+		}
 	}
 	defer os.Exit(exitCode)
 }
