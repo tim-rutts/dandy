@@ -34,7 +34,7 @@ func main() {
 
 	downloader, err := NewDownloader(*from, *to, *count, *verbose, *output)
 	if err != nil {
-		fmt.Printf("error on starting %v\n", err)
+		fmt.Printf("error on startup %v\n", err)
 		cancel()
 		defer os.Exit(1)
 		return
