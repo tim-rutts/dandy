@@ -34,7 +34,7 @@ func main() {
 
 	downloader, err := NewDownloader(*from, *to, *count, *verbose, *output)
 	if err != nil {
-		fmt.Println(err)
+		fmt.Printf("error on starting %v\n", err)
 		cancel()
 		defer os.Exit(1)
 		return
@@ -44,9 +44,16 @@ func main() {
 	select {
 	case <-done:
 		cancel()
-		defer os.Exit(0)
-		return
+		break
 	case <-ctx.Done():
-		return
+		break
 	}
+
+	exitCode := 0
+	err = downloader.Err()
+	if err != nil {
+		exitCode = 1
+		fmt.Printf("downloading stopped on error %v\n", err)
+	}
+	defer os.Exit(exitCode)
 }

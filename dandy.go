@@ -118,6 +118,7 @@ func (y *YearPage) Close() {
 
 type Downloader interface {
 	Run(ctx context.Context) <-chan struct{}
+	Err() error
 }
 
 type dandyDownloader struct {
@@ -133,6 +134,7 @@ type dandyDownloader struct {
 	totMags      *int32
 	totMagsOk    *int32
 	totMagsErrs  *int32
+	fatalErr     error
 }
 
 func newDandyDownloader(from, to int, verbose bool, output string) *dandyDownloader {
@@ -169,6 +171,10 @@ func NewDownloader(from, to, count int, verbose bool, output string) (Downloader
 	return newDandyDownloader(f, t, verbose, output), nil
 }
 
+func (d *dandyDownloader) Err() error {
+	return d.fatalErr
+}
+
 func (d *dandyDownloader) Run(ctx context.Context) <-chan struct{} {
 	if d.started {
 		return d.done
@@ -192,6 +198,10 @@ func (d *dandyDownloader) Run(ctx context.Context) <-chan struct{} {
 }
 
 func (d *dandyDownloader) stop(err interface{}) {
+	if fatalErr, ok := err.(error); ok {
+		d.fatalErr = fatalErr
+	}
+
 	d.reportFinished(err)
 	close(d.done)
 }
