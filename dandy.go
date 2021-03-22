@@ -44,7 +44,7 @@ type Magazine struct {
 
 func (m *Magazine) String() string {
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Year %v Name %q Size %v Filepath %v\n", m.Year, m.Name, m.FormattedSize(), m.Filepath))
+	sb.WriteString(fmt.Sprintf("Magazine %q for %v year Size %q Filepath %q\n", m.Name, m.Year, m.FormattedSize(), m.Filepath))
 	sb.WriteString(fmt.Sprintf("Addr %q", m.Addr))
 	if m.Err != nil {
 		sb.WriteString(fmt.Sprintf("\nError %v", m.Err))
@@ -63,29 +63,6 @@ func (m *Magazine) FormattedSize() string {
 		exp++
 	}
 	return fmt.Sprintf("%.1f %cb", float64(m.Size)/float64(div), "kMGTPE"[exp])
-}
-
-func (m *Magazine) Filename() (string, error) {
-	if len(m.Name) > 0 {
-		return m.filename(m.Name), nil
-	}
-
-	if len(m.Addr) == 0 {
-		return "", errors.New("addr is empty")
-	}
-
-	_, fn := path.Split(m.Addr)
-	if len(fn) == 0 {
-		return "", errors.New("cannot extract filename from addr")
-	}
-	return m.filename(fn), nil
-}
-
-func (m *Magazine) filename(fn string) string {
-	if fe := path.Ext(fn); len(fe) == 0 {
-		return fmt.Sprintf("%v.%v", fn, ext)
-	}
-	return fn
 }
 
 type Year int
@@ -416,7 +393,7 @@ func (d *dandyDownloader) downloadMagazine(ctx context.Context, m *Magazine) err
 		return m.Err
 	}
 
-	fp, err := d.buildAndCheckMagazineFilepath(m)
+	fp, err := buildAndCheckMagFilepath(d.output, m)
 	if err != nil {
 		return err
 	}
@@ -450,32 +427,6 @@ func (d *dandyDownloader) downloadMagazine(ctx context.Context, m *Magazine) err
 	m.Filepath = fp
 	m.Size = size
 	return nil
-}
-
-func (d *dandyDownloader) buildAndCheckMagazineFilepath(m *Magazine) (string, error) {
-	fn, err := m.Filename()
-	if err != nil {
-		return "", err
-	}
-
-	fp := filepath.Join(d.output, m.Year.String(), fn)
-	dir, _ := path.Split(fp)
-	if ok, err := pathExists(dir); err != nil {
-		return "", err
-	} else if !ok {
-		err = createDir(dir)
-		if err != nil {
-			return "", err
-		}
-		return fp, nil
-	}
-
-	if ok, err := pathExists(fp); err != nil {
-		return "", err
-	} else if ok {
-		return "", fmt.Errorf("file %v already exists", fp)
-	}
-	return fp, nil
 }
 
 func (d *dandyDownloader) reportMagazine(m *Magazine, dur time.Duration) {
@@ -566,4 +517,59 @@ func formatDur(dur time.Duration) string {
 		rd = time.Second
 	}
 	return fmt.Sprintf("%v", dur.Round(rd))
+}
+
+func buildAndCheckMagFilepath(output string, m *Magazine) (string, error) {
+	fp, err := buildMagFilepath(output, m.Name, m.Addr, m.Year)
+	if err != nil {
+		return "", err
+	}
+
+	dir, fn := path.Split(fp)
+	m.Name = fn
+	m.Filepath = fp
+
+	if ok, err := pathExists(dir); err != nil {
+		return "", err
+	} else if !ok {
+		err = createDir(dir)
+		if err != nil {
+			return "", err
+		}
+		return fp, nil
+	}
+
+	if ok, err := pathExists(fp); err != nil {
+		return "", err
+	} else if ok {
+		return "", fmt.Errorf("file %q already exists", fp)
+	}
+	return fp, nil
+}
+
+func buildMagFilepath(output, name, addr string, year Year) (string, error) {
+	fp := func(fn string) string {
+		return filepath.Join(output, year.String(), fn)
+	}
+
+	if len(name) > 0 {
+		return fp(addFileExt(name)), nil
+	}
+
+	if len(addr) == 0 {
+		return "", errors.New("addr is empty")
+	}
+
+	_, fn := path.Split(addr)
+	if len(fn) == 0 {
+		return "", errors.New("cannot extract filename from addr")
+	}
+	return fp(addFileExt(fn)), nil
+}
+
+func addFileExt(fn string) string {
+	if fe := path.Ext(fn); len(fe) == 0 {
+		return fmt.Sprintf("%v.%v", fn, ext)
+	}
+	return fn
 }
