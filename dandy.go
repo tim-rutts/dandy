@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -124,6 +125,8 @@ type dandyDownloader struct {
 	verbose      bool
 	done         chan struct{}
 	output       string
+	startMx      sync.Mutex
+	started      bool
 	startedAt    time.Time
 	totYears     int
 	totYearsDone *int32
@@ -167,6 +170,16 @@ func NewDownloader(from, to, count int, verbose bool, output string) (Downloader
 }
 
 func (d *dandyDownloader) Run(ctx context.Context) <-chan struct{} {
+	if d.started {
+		return d.done
+	}
+	d.startMx.Lock()
+	defer d.startMx.Unlock()
+
+	if d.started {
+		return d.done
+	}
+
 	d.done = make(chan struct{})
 	go func() {
 		defer func() {
@@ -184,7 +197,11 @@ func (d *dandyDownloader) stop(err interface{}) {
 }
 
 func (d *dandyDownloader) start(ctx context.Context) {
+	d.startedAt = time.Now()
+	d.started = true
+
 	d.reportStarted()
+
 	years := d.genYears(ctx)
 	pages := d.downloadYearPages(ctx, years)
 	links := d.parseYearPages(ctx, pages)
@@ -407,7 +424,7 @@ func (d *dandyDownloader) reportMagazine(m *Magazine, dur time.Duration) {
 }
 
 func (d *dandyDownloader) reportStarted() {
-	d.startedAt = time.Now()
+
 	d.report(func() interface{} {
 		var sb strings.Builder
 		sb.WriteString("started downloading for ")
