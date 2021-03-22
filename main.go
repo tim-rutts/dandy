@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
+	"time"
 )
 
 func main() {
@@ -23,8 +25,7 @@ func main() {
 		sigchan := make(chan os.Signal, 1)
 		signal.Notify(sigchan, syscall.SIGINT, syscall.SIGTERM, syscall.SIGQUIT, os.Interrupt)
 		select {
-		case sig := <-sigchan:
-			fmt.Printf("received system signal %+v \ncancelling main context and quit\n", sig)
+		case <-sigchan:
 			cancel()
 			return
 		case <-ctx.Done():
@@ -40,16 +41,41 @@ func main() {
 		return
 	}
 
+	progressInterval := 30 * time.Second
+	if *verbose {
+		progressInterval = 15 * time.Second
+	}
+
 	done := downloader.Run(ctx)
-	select {
-	case <-done:
-		cancel()
-		break
-	case <-ctx.Done():
-		break
+
+	totYears := downloader.YearTo() - downloader.YearFrom() + 1
+	var sb strings.Builder
+	sb.WriteString("started downloading for ")
+	if totYears == 1 {
+		sb.WriteString(fmt.Sprintf("%v year", downloader.YearFrom()))
+	} else {
+		sb.WriteString(fmt.Sprintf("%v years from %v to %v", totYears, downloader.YearFrom(), downloader.YearTo()))
+	}
+	sb.WriteString("\n")
+	fmt.Println(sb.String())
+
+loop:
+	for {
+		select {
+		case <-time.Tick(progressInterval):
+			fmt.Println(downloader.Status())
+			break
+		case <-done:
+			cancel()
+			break loop
+		case <-ctx.Done():
+			break loop
+		}
 	}
 
 	fmt.Printf("\n--------------------------\n")
+	fmt.Println(downloader.Status())
+
 	exitCode := 0
 	err = downloader.Err()
 	if err != nil {

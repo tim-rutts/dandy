@@ -136,6 +136,9 @@ func (e *FatalError) ErrorStack() string {
 type Downloader interface {
 	Run(ctx context.Context) <-chan struct{}
 	Err() error
+	Status() string
+	YearFrom() int
+	YearTo() int
 }
 
 type dandyDownloader struct {
@@ -191,6 +194,21 @@ func NewDownloader(from, to, count int, verbose bool, output string) (Downloader
 	return newDandyDownloader(f, t, verbose, output), nil
 }
 
+func (d *dandyDownloader) YearFrom() int {
+	return d.from
+}
+
+func (d *dandyDownloader) YearTo() int {
+	return d.to
+}
+
+func (d *dandyDownloader) Status() string {
+	if d.totYears == 1 {
+		return fmt.Sprintf("elapsed: %v magazines: %v ok: %v err: %v", d.elapsedStr(), *d.totMags, *d.totMagsOk, *d.totMagsErrs)
+	}
+	return fmt.Sprintf("elapsed: %v magazines: %v for %v(%v) years ok: %v err: %v", d.elapsedStr(), *d.totMags, *d.totYearsDone, d.totYears, *d.totMagsOk, *d.totMagsErrs)
+}
+
 func (d *dandyDownloader) Err() error {
 	return d.fatalErr
 }
@@ -228,7 +246,6 @@ func (d *dandyDownloader) stop(err error) {
 	d.stopped = true
 	d.ctxCancel()
 	close(d.done)
-	d.reportFinished(err)
 }
 
 func (d *dandyDownloader) start(ctx context.Context) {
@@ -238,8 +255,6 @@ func (d *dandyDownloader) start(ctx context.Context) {
 	d.startedAt = time.Now()
 	d.started = true
 	d.ctxCancel = cancel
-
-	d.reportStarted()
 
 	years := d.genYears(ctxWC)
 	pages := d.downloadYearPages(ctxWC, years)
@@ -470,33 +485,6 @@ func (d *dandyDownloader) reportMagazine(m *Magazine, dur time.Duration) {
 		var sb strings.Builder
 		sb.WriteString(fmt.Sprintf("magazine %v\n", m))
 		sb.WriteString(fmt.Sprintf("elapsed %v total %v\n", formatDur(dur), d.elapsedStr()))
-		sb.WriteString(fmt.Sprintf("progress %v\n\n", d.stat()))
-		return sb.String()
-	})
-}
-
-func (d *dandyDownloader) reportStarted() {
-	d.report(func() interface{} {
-		var sb strings.Builder
-		sb.WriteString("started downloading for ")
-		if d.totYears == 1 {
-			sb.WriteString(fmt.Sprintf("%v year", d.from))
-		} else {
-			sb.WriteString(fmt.Sprintf("%v years from %v to %v", d.totYears, d.from, d.to))
-		}
-		sb.WriteString("\n")
-		return sb.String()
-	})
-}
-
-func (d *dandyDownloader) reportFinished(fatalErr interface{}) {
-	d.report(func() interface{} {
-		var sb strings.Builder
-		sb.WriteString(fmt.Sprintf("finished working for %v \n", d.elapsedStr()))
-		sb.WriteString(fmt.Sprintf("statistic: %v \n", d.stat()))
-		if fatalErr != nil {
-			sb.WriteString(fmt.Sprintf("with fatal err %v", fatalErr))
-		}
 		return sb.String()
 	})
 }
@@ -506,10 +494,6 @@ func (d *dandyDownloader) report(data func() interface{}) {
 		return
 	}
 	fmt.Printf("%v: %v", formatTime(time.Now()), data())
-}
-
-func (d *dandyDownloader) stat() string {
-	return fmt.Sprintf("total years: %v processed: %v total magazines %v processed %v errors %v", d.totYears, *d.totYearsDone, *d.totMags, *d.totMagsOk, *d.totMagsErrs)
 }
 
 func (d *dandyDownloader) elapsed() time.Duration {
@@ -526,11 +510,6 @@ func (d *dandyDownloader) incYearProcessed() {
 
 func (d *dandyDownloader) incMagTotal() {
 	atomic.AddInt32(d.totMags, 1)
-
-	// TODO remove
-	if *d.totMags > 1 {
-		panic("stop stop stop")
-	}
 }
 
 func (d *dandyDownloader) incMagOk() {
