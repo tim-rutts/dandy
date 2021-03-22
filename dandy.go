@@ -124,7 +124,7 @@ type dandyDownloader struct {
 	verbose      bool
 	done         chan struct{}
 	output       string
-	started      time.Time
+	startedAt    time.Time
 	totYears     int
 	totYearsDone *int32
 	totMags      *int32
@@ -407,7 +407,7 @@ func (d *dandyDownloader) reportMagazine(m *Magazine, dur time.Duration) {
 }
 
 func (d *dandyDownloader) reportStarted() {
-	d.started = time.Now()
+	d.startedAt = time.Now()
 	d.report(func() interface{} {
 		var sb strings.Builder
 		sb.WriteString("started downloading for ")
@@ -445,7 +445,7 @@ func (d *dandyDownloader) stat() string {
 }
 
 func (d *dandyDownloader) elapsed() time.Duration {
-	return time.Since(d.started)
+	return time.Since(d.startedAt)
 }
 
 func (d *dandyDownloader) elapsedStr() string {
