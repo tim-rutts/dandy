@@ -171,16 +171,20 @@ func (d *dandyDownloader) Run(ctx context.Context) <-chan struct{} {
 	go func() {
 		defer func() {
 			fatal := recover()
-			d.reportFinished(fatal)
-			close(d.done)
+			d.stop(fatal)
 		}()
-		d.reportStarted()
-		d.run(ctx)
+		d.start(ctx)
 	}()
 	return d.done
 }
 
-func (d *dandyDownloader) run(ctx context.Context) {
+func (d *dandyDownloader) stop(err interface{}) {
+	d.reportFinished(err)
+	close(d.done)
+}
+
+func (d *dandyDownloader) start(ctx context.Context) {
+	d.reportStarted()
 	years := d.genYears(ctx)
 	pages := d.downloadYearPages(ctx, years)
 	links := d.parseYearPages(ctx, pages)
@@ -396,7 +400,7 @@ func (d *dandyDownloader) reportMagazine(m *Magazine, dur time.Duration) {
 	d.report(func() interface{} {
 		var sb strings.Builder
 		sb.WriteString(fmt.Sprintf("magazine %v\n", m))
-		sb.WriteString(fmt.Sprintf("elapsed %v total %v\n", formatDur(dur), formatDur(time.Since(d.started))))
+		sb.WriteString(fmt.Sprintf("elapsed %v total %v\n", formatDur(dur), d.elapsedStr()))
 		sb.WriteString(fmt.Sprintf("progress %v\n\n", d.stat()))
 		return sb.String()
 	})
@@ -420,7 +424,7 @@ func (d *dandyDownloader) reportStarted() {
 func (d *dandyDownloader) reportFinished(fatalErr interface{}) {
 	d.report(func() interface{} {
 		var sb strings.Builder
-		sb.WriteString(fmt.Sprintf("finished working for %v \n", formatDur(time.Since(d.started))))
+		sb.WriteString(fmt.Sprintf("finished working for %v \n", d.elapsedStr()))
 		sb.WriteString(fmt.Sprintf("statistic: %v \n", d.stat()))
 		if fatalErr != nil {
 			sb.WriteString(fmt.Sprintf("with fatal err %v", fatalErr))
@@ -438,6 +442,14 @@ func (d *dandyDownloader) report(data func() interface{}) {
 
 func (d *dandyDownloader) stat() string {
 	return fmt.Sprintf("total years: %v processed: %v total magazines %v processed %v errors %v", d.totYears, *d.totYearsDone, *d.totMags, *d.totMagsOk, *d.totMagsErrs)
+}
+
+func (d *dandyDownloader) elapsed() time.Duration {
+	return time.Since(d.started)
+}
+
+func (d *dandyDownloader) elapsedStr() string {
+	return formatDur(d.elapsed())
 }
 
 func (d *dandyDownloader) incYearProcessed() {
