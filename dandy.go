@@ -121,12 +121,11 @@ type Downloader interface {
 
 type dandyDownloader struct {
 	from, to     int
-	count        int
 	verbose      bool
 	done         chan struct{}
 	output       string
 	started      time.Time
-	totYears     *int32
+	totYears     int
 	totYearsDone *int32
 	totMags      *int32
 	totMagsDone  *int32
@@ -137,10 +136,9 @@ func newDandyDownloader(from, to int, verbose bool, output string) *dandyDownloa
 	return &dandyDownloader{
 		from:         from,
 		to:           to,
-		count:        to - from + 1,
 		verbose:      verbose,
 		output:       output,
-		totYears:     new(int32),
+		totYears:     to - from + 1,
 		totYearsDone: new(int32),
 		totMags:      new(int32),
 		totMagsDone:  new(int32),
@@ -300,8 +298,6 @@ func (d *dandyDownloader) genYears(ctx context.Context) <-chan Year {
 		for i := d.from; i <= d.to; i++ {
 			select {
 			case c <- Year(i):
-				d.incYear()
-				break
 			case <-ctx.Done():
 				return
 			}
@@ -411,10 +407,10 @@ func (d *dandyDownloader) reportStarted() {
 	d.report(func() interface{} {
 		var sb strings.Builder
 		sb.WriteString("started downloading for ")
-		if d.count == 1 {
+		if d.totYears == 1 {
 			sb.WriteString(fmt.Sprintf("%v year", d.from))
 		} else {
-			sb.WriteString(fmt.Sprintf("%v years from %v to %v", d.count, d.from, d.to))
+			sb.WriteString(fmt.Sprintf("%v years from %v to %v", d.totYears, d.from, d.to))
 		}
 		sb.WriteString("\n")
 		return sb.String()
@@ -441,11 +437,7 @@ func (d *dandyDownloader) report(data func() interface{}) {
 }
 
 func (d *dandyDownloader) stat() string {
-	return fmt.Sprintf("total years: %v processed: %v total magazines %v processed %v errors %v", *d.totYears, *d.totYearsDone, *d.totMags, *d.totMagsDone, *d.totErrs)
-}
-
-func (d *dandyDownloader) incYear() {
-	atomic.AddInt32(d.totYears, 1)
+	return fmt.Sprintf("total years: %v processed: %v total magazines %v processed %v errors %v", d.totYears, *d.totYearsDone, *d.totMags, *d.totMagsDone, *d.totErrs)
 }
 
 func (d *dandyDownloader) incYearProcessed() {
