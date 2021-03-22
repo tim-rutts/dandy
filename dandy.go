@@ -198,7 +198,7 @@ func (d *dandyDownloader) YearTo() int {
 
 func (d *dandyDownloader) Status() string {
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("elapsed: %v magazines: %v", d.elapsedStr(), *d.totMags))
+	sb.WriteString(fmt.Sprintf("elapsed: %v magazines: %v (%v)", d.elapsedStr(), *d.totMagsOk+*d.totMagsErrs, *d.totMags))
 	if d.totYears > 1 {
 		sb.WriteString(fmt.Sprintf(" for %v(%v) years", *d.totYearsDone, d.totYears))
 	}
@@ -331,11 +331,11 @@ func (d *dandyDownloader) parseYearPages(ctx context.Context, pages <-chan *Year
 		defer d.guard()
 		for page := range pages {
 			links := d.parseYearPage(page)
+			d.incMagTotal(len(links))
+
 			for _, link := range links {
 				select {
 				case c <- link:
-					d.incMagTotal()
-					break
 				case <-ctx.Done():
 					return
 				}
@@ -500,8 +500,8 @@ func (d *dandyDownloader) incYearProcessed() {
 	atomic.AddInt32(d.totYearsDone, 1)
 }
 
-func (d *dandyDownloader) incMagTotal() {
-	atomic.AddInt32(d.totMags, 1)
+func (d *dandyDownloader) incMagTotal(count int) {
+	atomic.AddInt32(d.totMags, int32(count))
 }
 
 func (d *dandyDownloader) incMagOk() {
