@@ -109,7 +109,7 @@ func printStatus(d Downloader) {
 }
 
 func formatNow() string {
-	return time.Now().Format("03:04:05.000")
+	return time.Now().Format("15:04:05.000")
 }
 
 func progressInterval() time.Duration {
