@@ -135,6 +135,9 @@ type dandyDownloader struct {
 	totMagsOk    *int32
 	totMagsErrs  *int32
 	fatalErr     error
+	ctxCancel    context.CancelFunc
+	stopped      bool
+	stopMx       sync.Mutex
 }
 
 func newDandyDownloader(from, to int, verbose bool, output string) *dandyDownloader {
@@ -187,41 +190,58 @@ func (d *dandyDownloader) Run(ctx context.Context) <-chan struct{} {
 	}
 
 	d.done = make(chan struct{})
-	go func() {
-		defer func() {
-			fatal := recover()
-			d.stop(fatal)
-		}()
-		d.start(ctx)
-	}()
+	go d.start(ctx)
 	return d.done
 }
 
 func (d *dandyDownloader) stop(err interface{}) {
-	if fatalErr, ok := err.(error); ok {
-		d.fatalErr = fatalErr
+	if d.fatalErr == nil && err != nil {
+		d.fatalErr = fmt.Errorf("%v", err)
 	}
 
-	d.reportFinished(err)
+	if d.stopped {
+		return
+	}
+	d.stopMx.Lock()
+	defer d.stopMx.Unlock()
+	if d.stopped {
+		return
+	}
+
+	d.stopped = true
+	d.ctxCancel()
 	close(d.done)
+	d.reportFinished(err)
 }
 
 func (d *dandyDownloader) start(ctx context.Context) {
+	ctxWC, cancel := context.WithCancel(ctx)
+	defer func() {
+		fe := recover()
+		d.stop(fe)
+	}()
+
 	d.startedAt = time.Now()
 	d.started = true
+	d.ctxCancel = cancel
 
 	d.reportStarted()
 
-	years := d.genYears(ctx)
-	pages := d.downloadYearPages(ctx, years)
-	links := d.parseYearPages(ctx, pages)
-	d.downloadMagazines(ctx, links)
+	years := d.genYears(ctxWC)
+	pages := d.downloadYearPages(ctxWC, years)
+	links := d.parseYearPages(ctxWC, pages)
+	d.downloadMagazines(ctxWC, links)
 }
 
 func (d *dandyDownloader) downloadYearPages(ctx context.Context, years <-chan Year) <-chan *YearPage {
 	c := make(chan *YearPage)
 	go func() {
-		defer close(c)
+		defer func() {
+			close(c)
+			if fe := recover(); fe != nil {
+				d.stop(fe)
+			}
+		}()
 		for year := range years {
 			page := d.downloadYearPage(ctx, year)
 			select {
@@ -257,7 +277,12 @@ func (d *dandyDownloader) downloadYearPage(ctx context.Context, year Year) *Year
 func (d *dandyDownloader) parseYearPages(ctx context.Context, pages <-chan *YearPage) <-chan *Magazine {
 	c := make(chan *Magazine)
 	go func() {
-		defer close(c)
+		defer func() {
+			close(c)
+			if fe := recover(); fe != nil {
+				d.stop(fe)
+			}
+		}()
 		for page := range pages {
 			links := d.parseYearPage(page)
 			for _, link := range links {
@@ -325,7 +350,12 @@ func (d *dandyDownloader) parseYearPage(page *YearPage) []*Magazine {
 func (d *dandyDownloader) genYears(ctx context.Context) <-chan Year {
 	c := make(chan Year)
 	go func() {
-		defer close(c)
+		defer func() {
+			close(c)
+			if fe := recover(); fe != nil {
+				d.stop(fe)
+			}
+		}()
 		for i := d.from; i <= d.to; i++ {
 			select {
 			case c <- Year(i):
@@ -434,7 +464,6 @@ func (d *dandyDownloader) reportMagazine(m *Magazine, dur time.Duration) {
 }
 
 func (d *dandyDownloader) reportStarted() {
-
 	d.report(func() interface{} {
 		var sb strings.Builder
 		sb.WriteString("started downloading for ")

@@ -53,7 +53,7 @@ func main() {
 	err = downloader.Err()
 	if err != nil {
 		exitCode = 1
-		fmt.Printf("processing stopped on error %v\n", err)
+		fmt.Printf("\nprocessing stopped on error %v\n", err)
 	}
 	defer os.Exit(exitCode)
 }
