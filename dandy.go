@@ -44,25 +44,12 @@ type Magazine struct {
 
 func (m *Magazine) String() string {
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Magazine %q for %v year Size %q Filepath %q\n", m.Name, m.Year, m.FormattedSize(), m.Filepath))
+	sb.WriteString(fmt.Sprintf("Magazine %q for %v year Size %q Filepath %q\n", m.Name, m.Year, formatFileSize(m.Size), m.Filepath))
 	sb.WriteString(fmt.Sprintf("Addr %q", m.Addr))
 	if m.Err != nil {
 		sb.WriteString(fmt.Sprintf("\nError %v", m.Err))
 	}
 	return sb.String()
-}
-
-func (m *Magazine) FormattedSize() string {
-	const unit = 1000
-	if m.Size < unit {
-		return fmt.Sprintf("%d b", m.Size)
-	}
-	div, exp := int64(unit), 0
-	for n := m.Size / unit; n >= unit; n /= unit {
-		div *= unit
-		exp++
-	}
-	return fmt.Sprintf("%.1f %cb", float64(m.Size)/float64(div), "kMGTPE"[exp])
 }
 
 type Year int
@@ -572,4 +559,17 @@ func addFileExt(fn string) string {
 		return fmt.Sprintf("%v.%v", fn, ext)
 	}
 	return fn
+}
+
+func formatFileSize(size int64) string {
+	const unit = 1000
+	if size < unit {
+		return fmt.Sprintf("%d b", size)
+	}
+	div, exp := int64(unit), 0
+	for n := size / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %cb", float64(size)/float64(div), "kMGTPE"[exp])
 }
