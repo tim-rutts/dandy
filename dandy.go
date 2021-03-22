@@ -128,8 +128,8 @@ type dandyDownloader struct {
 	totYears     int
 	totYearsDone *int32
 	totMags      *int32
-	totMagsDone  *int32
-	totErrs      *int32
+	totMagsOk    *int32
+	totMagsErrs  *int32
 }
 
 func newDandyDownloader(from, to int, verbose bool, output string) *dandyDownloader {
@@ -141,8 +141,8 @@ func newDandyDownloader(from, to int, verbose bool, output string) *dandyDownloa
 		totYears:     to - from + 1,
 		totYearsDone: new(int32),
 		totMags:      new(int32),
-		totMagsDone:  new(int32),
-		totErrs:      new(int32),
+		totMagsOk:    new(int32),
+		totMagsErrs:  new(int32),
 	}
 }
 
@@ -232,7 +232,7 @@ func (d *dandyDownloader) parseYearPages(ctx context.Context, pages <-chan *Year
 			for _, link := range links {
 				select {
 				case c <- link:
-					d.incMag()
+					d.incMagTotal()
 					break
 				case <-ctx.Done():
 					return
@@ -316,9 +316,9 @@ func (d *dandyDownloader) downloadMagazines(ctx context.Context, magazines <-cha
 			err := d.downloadMagazine(ctx, magazine)
 			if err != nil {
 				magazine.Err = err
-				d.incErrors()
+				d.incMagError()
 			} else {
-				d.incMagProcessed()
+				d.incMagOk()
 			}
 			d.reportMagazine(magazine, time.Since(started))
 		}
@@ -437,23 +437,23 @@ func (d *dandyDownloader) report(data func() interface{}) {
 }
 
 func (d *dandyDownloader) stat() string {
-	return fmt.Sprintf("total years: %v processed: %v total magazines %v processed %v errors %v", d.totYears, *d.totYearsDone, *d.totMags, *d.totMagsDone, *d.totErrs)
+	return fmt.Sprintf("total years: %v processed: %v total magazines %v processed %v errors %v", d.totYears, *d.totYearsDone, *d.totMags, *d.totMagsOk, *d.totMagsErrs)
 }
 
 func (d *dandyDownloader) incYearProcessed() {
 	atomic.AddInt32(d.totYearsDone, 1)
 }
 
-func (d *dandyDownloader) incMag() {
+func (d *dandyDownloader) incMagTotal() {
 	atomic.AddInt32(d.totMags, 1)
 }
 
-func (d *dandyDownloader) incMagProcessed() {
-	atomic.AddInt32(d.totMagsDone, 1)
+func (d *dandyDownloader) incMagOk() {
+	atomic.AddInt32(d.totMagsOk, 1)
 }
 
-func (d *dandyDownloader) incErrors() {
-	atomic.AddInt32(d.totErrs, 1)
+func (d *dandyDownloader) incMagError() {
+	atomic.AddInt32(d.totMagsErrs, 1)
 }
 
 func calcYearsRange(f, t, c int) (from, to int, err error) {
