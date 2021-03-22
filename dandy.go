@@ -117,6 +117,7 @@ type dandyDownloader struct {
 	totMags      *int32
 	totMagsOk    *int32
 	totMagsErrs  *int32
+	totSize      *int64
 	fatalErr     error
 	ctxCancel    context.CancelFunc
 	stopped      bool
@@ -133,6 +134,7 @@ func newDandyDownloader(from, to int, output string) *dandyDownloader {
 		totMags:      new(int32),
 		totMagsOk:    new(int32),
 		totMagsErrs:  new(int32),
+		totSize:      new(int64),
 	}
 }
 
@@ -166,9 +168,9 @@ func (d *dandyDownloader) YearTo() int {
 
 func (d *dandyDownloader) Status() string {
 	if d.totYears == 1 {
-		return fmt.Sprintf("elapsed: %v magazines: %v ok: %v err: %v", d.elapsedStr(), *d.totMags, *d.totMagsOk, *d.totMagsErrs)
+		return fmt.Sprintf("elapsed: %v magazines: %v ok: %v err: %v downloaded: %v", d.elapsedStr(), *d.totMags, *d.totMagsOk, *d.totMagsErrs, formatFileSize(*d.totSize))
 	}
-	return fmt.Sprintf("elapsed: %v magazines: %v for %v(%v) years ok: %v err: %v", d.elapsedStr(), *d.totMags, *d.totYearsDone, d.totYears, *d.totMagsOk, *d.totMagsErrs)
+	return fmt.Sprintf("elapsed: %v magazines: %v for %v(%v) years ok: %v err: %v downloaded: %v", d.elapsedStr(), *d.totMags, *d.totYearsDone, d.totYears, *d.totMagsOk, *d.totMagsErrs, formatFileSize(*d.totSize))
 }
 
 func (d *dandyDownloader) Err() error {
@@ -370,6 +372,7 @@ func (d *dandyDownloader) downloadMagazines(ctx context.Context, magazines <-cha
 			} else {
 				d.incMagOk()
 			}
+			d.incSize(magazine.Size)
 			d.reportMagazine(magazine, time.Since(started))
 		}
 	}
@@ -429,6 +432,13 @@ func (d *dandyDownloader) elapsed() time.Duration {
 
 func (d *dandyDownloader) elapsedStr() string {
 	return formatDur(d.elapsed())
+}
+
+func (d *dandyDownloader) incSize(size int64) {
+	if size == 0 {
+		return
+	}
+	atomic.AddInt64(d.totSize, size)
 }
 
 func (d *dandyDownloader) incYearProcessed() {
