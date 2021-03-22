@@ -1,3 +1,5 @@
 /.idea
 /out
 /download
+
+.DS_Store
