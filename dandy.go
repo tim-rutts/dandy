@@ -167,10 +167,14 @@ func (d *dandyDownloader) YearTo() int {
 }
 
 func (d *dandyDownloader) Status() string {
-	if d.totYears == 1 {
-		return fmt.Sprintf("elapsed: %v magazines: %v ok: %v err: %v downloaded: %v", d.elapsedStr(), *d.totMags, *d.totMagsOk, *d.totMagsErrs, formatFileSize(*d.totSize))
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf("elapsed: %v magazines: %v", d.elapsedStr(), *d.totMags))
+	if d.totYears > 1 {
+		sb.WriteString(fmt.Sprintf(" for %v(%v) years", *d.totYearsDone, d.totYears))
 	}
-	return fmt.Sprintf("elapsed: %v magazines: %v for %v(%v) years ok: %v err: %v downloaded: %v", d.elapsedStr(), *d.totMags, *d.totYearsDone, d.totYears, *d.totMagsOk, *d.totMagsErrs, formatFileSize(*d.totSize))
+	sb.WriteString(fmt.Sprintf(" ok: %v err: %v downloaded: %v", *d.totMagsOk, *d.totMagsErrs, formatFileSize(*d.totSize)))
+
+	return sb.String()
 }
 
 func (d *dandyDownloader) Err() error {
