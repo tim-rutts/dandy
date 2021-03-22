@@ -137,7 +137,7 @@ func newDandyDownloader(from, to int, verbose bool, output string) *dandyDownloa
 	return &dandyDownloader{
 		from:         from,
 		to:           to,
-		count:        from - to + 1,
+		count:        to - from + 1,
 		verbose:      verbose,
 		output:       output,
 		totYears:     new(int32),
